@@ -9,6 +9,8 @@ from analyzer import extract_facts
 from storage import init_db, insert_facts, get_all_facts, get_cross_document_fact_clusters
 from reasoner import compare_fact_cluster
 
+import time
+
 app = FastAPI(title="Knowledge Layer API")
 
 # Add CORS block for React frontend
@@ -70,13 +72,15 @@ async def upload_and_process_pdf(file: UploadFile = File(...)):
     
     # Note: Processing the first 3 chunks universally to avoid LLM rate-limit timeouts on the free tier.
     # In a production environment with a paid API tier, you would loop through all `chunks`.
-    target_chunks = chunks[:3] 
+    target_chunks = chunks[16:22]
     
     for chunk in target_chunks:
         extracted = extract_facts(chunk)
         if extracted:
             insert_facts(extracted)
             total_facts += len(extracted)
+
+        # time.sleep(2.5)
             
     # 7. Update Status
     conn = sqlite3.connect("knowledge_layer.db")
