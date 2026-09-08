@@ -3,41 +3,65 @@ import json
 from dotenv import load_dotenv
 from parser import parse_pdf
 from analyzer import extract_facts
-from storage import init_db, insert_facts, get_all_facts
+from storage import init_db, insert_facts, get_all_facts, get_cross_document_fact_clusters
+from reasoner import compare_fact_cluster
 
 load_dotenv()
 
+PDF_PATHS = [
+    "starter-datasets/delhivery/01-delhivery-prospectus-2022-excerpt.pdf",
+    "starter-datasets/delhivery/02-delhivery-annual-report-fy24-excerpt.pdf"
+]
+
 if __name__ == "__main__":
-    test_pdf_path = "starter-datasets/delhivery/01-delhivery-prospectus-2022-excerpt.pdf"
-
-    if not os.path.exists(test_pdf_path):
-        print(f"Error: {test_pdf_path} not found.")
-        exit(1)
-
-    print("Step 3.1: Initializing knowledge database...")
+    print("Step 4.1: Initializing Database...")
     init_db()
 
-    print("Step 3.2: Reading PDF chunks...")
-    chunks = parse_pdf(test_pdf_path)
+    # To ensure representative clusters without burning rate limits,
+    # we process selected high-density metric pages from both documents.
+    targets = [
+        {"path": PDF_PATHS[0], "pages": [17, 18]}, # Prospectus key financial summaries
+        {"path": PDF_PATHS[1], "pages": [1, 2]}     # FY24 Report financial highlights
+    ]
 
-    # Use Page 18 where we know facts exist
-    sample_chunk = chunks[17]
-    print(f"Step 3.3: Extracting facts from Page {sample_chunk['page_number']}...")
-    facts = extract_facts(sample_chunk)
-    print(f"Extracted {len(facts)} facts from LLM.")
+    for target in targets:
+        if not os.path.exists(target["path"]):
+            print(f"Skipping {target['path']} (file not found)")
+            continue
 
-    print("Step 3.4: Storing facts into SQLite...")
-    inserted_count = insert_facts(facts)
-    print(f"Stored {inserted_count} records into knowledge_layer.db.\n")
+        print(f"\nProcessing {os.path.basename(target['path'])}...")
+        chunks = parse_pdf(target["path"])
+        
+        for p_idx in target["pages"]:
+            if p_idx < len(chunks):
+                chunk = chunks[p_idx]
+                print(f"  -> Extracting from Page {chunk['page_number']}...")
+                extracted = extract_facts(chunk)
+                insert_facts(extracted)
+                print(f"     Stored {len(extracted)} facts.")
 
-    print("-" * 50)
-    print("Step 3.5: Reading all facts back from database to verify persistence:")
-    persisted_facts = get_all_facts()
-    for row in persisted_facts[:3]:
-        print(f"ID #{row['id']} | [{row['category']}] {row['entity']} -> {row['metric_or_attribute']}")
-        print(f"  Value    : {row['value']}")
-        print(f"  Context  : {row['context']}")
-        print(f"  Evidence : \"{row['source_sentence']}\"")
-        print(f"  Source   : {row['source_filename']} (Page {row['page_number']})\n")
-    print(f"... Total records in storage: {len(persisted_facts)}")
-    print("-" * 50)
+    print("\n" + "=" * 60)
+    print("Step 4.2: Querying Multi-Document Candidate Clusters...")
+    clusters = get_cross_document_fact_clusters()
+    print(f"Found {len(clusters)} shared (Entity, Metric) clusters spanning multiple files.")
+    
+    if not clusters:
+        print("Note: No cross-document overlap found in these small test pages yet.")
+        print("Simulating a cluster comparison to verify the reasoning engine:")
+        sample_facts = get_all_facts()[:2]
+        if len(sample_facts) >= 2:
+            results = compare_fact_cluster(sample_facts)
+            print(json.dumps(results, indent=2))
+    else:
+        print("\nStep 4.3: Running LLM Cross-Document Reasoning Engine...")
+        for (ent, metric), fact_list in clusters.items():
+            print(f"\nComparing Cluster: Entity='{ent}', Metric='{metric}' ({len(fact_list)} facts):")
+            results = compare_fact_cluster(fact_list)
+            for res in results:
+                print(f"\n  [Verdict]: {res['relationship']}")
+                if res['reconciliation_dimension']:
+                    print(f"  [Dimension]: {res['reconciliation_dimension']}")
+                print(f"  [Reasoning]: {res['explanation']}")
+                print(f"  [Fact A ID]: {res['fact_a_id']} vs [Fact B ID]: {res['fact_b_id']}")
+
+    print("\n" + "=" * 60)

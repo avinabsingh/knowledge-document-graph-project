@@ -1,28 +1,66 @@
-import pdfplumber
-from typing import List, Dict
+import fitz  # PyMuPDF
+import hashlib
+from typing import List, Dict, Any
 
-def parse_pdf(file_path: str) -> List[Dict]:
+def compute_file_hash(file_path: str) -> str:
+    """Computes SHA256 hash for document deduplication."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+def process_pdf(file_path: str, document_id: str) -> List[Dict[str, Any]]:
     """
-    Reads a PDF and extracts text page by page.
-    Returns a list of dictionaries containing the text and metadata.
+    Extracts text from any PDF using PyMuPDF and creates semantic chunks.
+    Chunks are roughly 1000 tokens (~4000 chars) with a 150 token (~600 chars) overlap.
     """
-    document_chunks = []
+    doc = fitz.open(file_path)
+    chunks = []
     
-    # Extract just the filename from the full path
-    filename = file_path.split('/')[-1]
+    current_chunk_text = ""
+    start_page = 1
+    chunk_index = 0
+    
+    # Text length approximations for tokens
+    CHUNK_SIZE_CHARS = 4000 
+    OVERLAP_CHARS = 600 
 
-    with pdfplumber.open(file_path) as pdf:
-        for page_num, page in enumerate(pdf.pages, start=1):
-            text = page.extract_text()
+    for page_num in range(len(doc)):
+        text = doc[page_num].get_text("text").strip()
+        
+        # Skip empty pages
+        if not text:
+            continue
             
-            if text:
-                # Clean up basic whitespace issues
-                clean_text = " ".join(text.split())
-                
-                document_chunks.append({
-                    "filename": filename,
-                    "page_number": page_num,
-                    "text": clean_text
-                })
-                
-    return document_chunks
+        clean_text = " ".join(text.split())
+        current_chunk_text += " " + clean_text
+        
+        while len(current_chunk_text) >= CHUNK_SIZE_CHARS:
+            chunk_text = current_chunk_text[:CHUNK_SIZE_CHARS]
+            
+            chunks.append({
+                "chunk_id": f"{document_id}_chunk_{chunk_index}",
+                "page_start": start_page,
+                "page_end": page_num + 1,
+                "text": chunk_text.strip(),
+                "filename": file_path.split('/')[-1]
+            })
+            chunk_index += 1
+            
+            # Maintain overlap for semantic continuity
+            current_chunk_text = current_chunk_text[CHUNK_SIZE_CHARS - OVERLAP_CHARS:]
+            start_page = page_num + 1
+
+    # Append any remaining text as the final chunk
+    if len(current_chunk_text.strip()) > 100:
+        chunks.append({
+            "chunk_id": f"{document_id}_chunk_{chunk_index}",
+            "page_start": start_page,
+            "page_end": len(doc),
+            "text": current_chunk_text.strip(),
+            "filename": file_path.split('/')[-1]
+        })
+        
+    doc.close()
+    return chunks
