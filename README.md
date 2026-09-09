@@ -69,6 +69,33 @@ The **Fact Knowledge Layer** bypasses naive semantic search by turning raw unstr
 
 ---
 
+
+
+## Screenshots
+ 
+**Dashboard — Document Ingestion & Semantic Knowledge Graph**
+Force-directed graph visualizing documents (blue), entities (orange), and extracted facts (green).
+ 
+![Dashboard and Knowledge Graph](assets/dashboard-ingestion-graph.png)
+ 
+**Assignment Demonstration — 4 Cases**
+Live status view of the four reasoning cases: Corroboration, Contradiction, Reconciled by Context, and Failure Handling.
+ 
+![Assignment Demonstration Cases](assets/demonstration-cases.png)
+ 
+**Raw Knowledge Base**
+Every extracted fact, normalized with entity, metric, value, period, source document, and confidence score.
+ 
+![Raw Knowledge Base Table](assets/raw-knowledge-base.png)
+ 
+**Evidence Grounding Modal**
+Clicking any fact row reveals the exact source document, page, chunk ID, and verbatim evidence sentence.
+ 
+![Grounding Evidence Modal](assets/grounding-evidence-modal.png)
+ 
+---
+
+
 ## Repository Structure
 
 ```text
